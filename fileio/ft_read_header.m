@@ -43,11 +43,10 @@ function [hdr] = ft_read_header(filename, varargin)
 % returned in the hdr.orig subfield.
 %
 % The following MEG dataformats are supported
-%   CTF - VSM MedTech (*.ds, *.res4, *.meg4)
-%   Neuromag - Elekta (*.fif)
-%   BTi - 4D Neuroimaging (*.m4d, *.pdf, *.xyz)
-%   Yokogawa (*.ave, *.con, *.raw)
-%   Ricoh (*.ave, *.con)
+%   CTF (*.ds, *.res4, *.meg4)
+%   Neuromag/Elekta (*.fif)
+%   BTi/4D (*.m4d, *.pdf, *.xyz)
+%   Yokogawa/Ricoh (*.ave, *.con, *.raw)
 %   NetMEG (*.nc)
 %   ITAB - Chieti (*.mhd)
 %   Tristan Babysquid (*.fif)
@@ -79,6 +78,7 @@ function [hdr] = ft_read_header(filename, varargin)
 %
 % The following NIRS dataformats are supported
 %   BUCN - Birkbeck college, London (*.txt)
+%   Artinis - Artinis Medical Systems B.V. (*.oxy3, *.oxy4, *.oxyproj)
 %
 % The following Eyetracker dataformats are supported
 %   EyeLink - SR Research (*.asc)
@@ -210,7 +210,7 @@ else
   checkmaxfilter = ft_getopt(varargin, 'checkmaxfilter', true);
 
   if isempty(cache)
-    if any(strcmp(headerformat, {'bci2000_dat', 'eyelink_asc', 'gtec_mat', 'gtec_hdf5', 'mega_neurone', 'smi_txt', 'biosig'}))
+    if any(strcmp(headerformat, {'bci2000_dat', 'eyelink_asc', 'gtec_mat', 'gtec_hdf5', 'mega_neurone', 'nihonkohden_m00', 'smi_txt', 'biosig'}))
       cache = true;
     else
       cache = false;
@@ -441,10 +441,10 @@ switch headerformat
     ft_hastoolbox('NPMK', 1);
     % ensure that the filename contains a full path specification,
     % otherwise the low-level function fails
-    [p,n,~] = fileparts(filename);
+    [p,n] = fileparts(filename);
     if isempty(p)
       filename = which(filename);
-      [p,n,~] = fileparts(filename);
+      [p,n] = fileparts(filename);
     end
 
     NEV = openNEV(filename,'noread','nosave');
@@ -472,7 +472,7 @@ switch headerformat
     ft_hastoolbox('NPMK', 1);
     % ensure that the filename contains a full path specification,
     % otherwise the low-level function fails
-    [p, ~, ~] = fileparts(filename);
+    p = fileparts(filename);
     if isempty(p)
       filename = which(filename);
     end
@@ -738,6 +738,18 @@ switch headerformat
     % read the header information from shared memory
     hdr = read_shm_header(filename);
 
+
+  case {'curry_dat', 'curry_cdt'}
+    orig            = load_curry_data_file(filename);
+    hdr             = [];
+    hdr.Fs          = orig.fFrequency;
+    hdr.nChans      = orig.nChannels;
+    hdr.nSamples    = orig.nSamples;
+    hdr.nSamplesPre = sum(orig.time<0);
+    hdr.nTrials     = orig.nTrials;
+    hdr.label       = orig.labels(:);
+    hdr.orig        = orig;
+
   case 'dataq_wdq'
     orig            = read_wdq_header(filename);
     hdr             = [];
@@ -798,7 +810,7 @@ switch headerformat
   case 'eep_cnt'
     % check that the required low-level toolbox is available
     ft_hastoolbox('eeprobe', 1);
-    % read the first sample from the continous data, this will also return the header
+    % read the first sample from the continuous data, this will also return the header
     orig = read_eep_cnt(filename, 1, 1);
     hdr.Fs          = orig.rate;
     hdr.nSamples    = orig.nsample;
@@ -977,7 +989,7 @@ switch headerformat
     end
 
     % get hdr info from xml files
-    ws = warning('off', 'MATLAB:REGEXP:deprecated'); % due to some small code xml2struct
+    ws = ft_warning('off', 'MATLAB:REGEXP:deprecated'); % due to some small code xml2struct
     xmlfiles = dir( fullfile(filename, '*.xml'));
     disp('reading xml files to obtain header info...')
     for i = 1:numel(xmlfiles)
@@ -989,7 +1001,7 @@ switch headerformat
         orig.xml.(fieldname) = xml2struct(filename_xml);
       end
     end
-    warning(ws); % revert the warning state
+    ft_warning(ws); % revert the warning state
 
     % epochs.xml seems the most common version, but epoch.xml might also
     % occur, so use only one name
@@ -1171,9 +1183,8 @@ switch headerformat
     hdr.orig = orig;
 
   case 'egi_mff_v2'
-    % ensure that the EGI_MFF toolbox is on the path
-    ft_hastoolbox('egi_mff', 1);
-    % ensure that the JVM is running and the jar file is on the path
+    % ensure that the EGI_MFF_V2 toolbox is on the path
+    ft_hastoolbox('egi_mff_v2', 1);
 
     %%%%%%%%%%%%%%%%%%%%%%
     %workaround for MATLAB bug resulting in global variables being cleared
@@ -1186,6 +1197,7 @@ switch headerformat
     end
     %%%%%%%%%%%%%%%%%%%%%%
 
+    % ensure that the JVM is running and the jar file is on the path
     mff_setup;
 
     %%%%%%%%%%%%%%%%%%%%%%
@@ -1208,6 +1220,7 @@ switch headerformat
       % add the full path, including drive letter or slashes as needed.
       filename = fullfile(pwd, filename);
     end
+
     hdr = read_mff_header(filename);
 
   case {'egi_mff_v3' 'egi_mff'} % this is the default
@@ -1539,7 +1552,7 @@ switch headerformat
     % this is hard-coded for the Jinga-Hi JAGA16 system with 16 channels
     packetsize = (4*2 + 6*2 + 16*43*2); % in bytes
     % read the first packet
-    fid  = fopen(filename, 'r');
+    fid  = fopen_or_error(filename, 'r');
     buf  = fread(fid, packetsize/2, 'uint16');
     fclose(fid);
 
@@ -2161,8 +2174,16 @@ switch headerformat
     hdr = read_neurosim_spikes(filename, headerOnly);
 
   case 'nihonkohden_m00'
-    hdr = read_nihonkohden_hdr(filename);
-    
+    % this is an ASCII file format which is rather inefficient to read
+    if cache
+      % read it once and store the data along with the header
+      [hdr, dat] = read_nihonkohden_m00(filename);
+      hdr.orig.dat = dat;
+    else
+      % read only the header
+      hdr = read_nihonkohden_m00(filename);
+    end
+
   case 'nihonkohden_eeg'
     ft_hastoolbox('brainstorm', 1);
     hdr = read_brainstorm_header(filename);
@@ -2256,6 +2277,14 @@ switch headerformat
   case 'artinis_oxy3'
     ft_hastoolbox('artinis', 1);
     hdr = read_artinis_oxy3(filename);
+
+  case 'artinis_oxy4'
+    ft_hastoolbox('artinis', 1);
+    hdr = read_artinis_oxy4(filename);
+
+  case 'artinis_oxyproj'
+    ft_hastoolbox('artinis', 1);
+    hdr = read_oxyproj_header(filename);
 
   case 'plexon_ds'
     hdr = read_plexon_ds(filename);
@@ -2543,12 +2572,16 @@ switch headerformat
     hdr = read_videomeg_vid(filename);
     checkUniqueLabels = false;
 
+  case 'video'
+    hdr = read_video(filename);
+    checkUniqueLabels = false;
+
   otherwise
-    % attempt to run headerformat as a function
-    % in case using an external read function was desired, this is where it is executed
-    % if it fails, the regular unsupported error message is thrown
-      hdr = feval(headerformat,filename);
+    % attempt to run "headerformat" as a function
+    % this allows the user to specify an external reading function
+    % if it fails, the regular unsupported warning message is thrown
     try
+      hdr = feval(headerformat, filename);
     catch
       if strcmp(fallback, 'biosig') && ft_hastoolbox('BIOSIG', 1)
         hdr = read_biosig_header(filename);
@@ -2650,7 +2683,7 @@ end
 if cache && exist(headerfile, 'file')
   % put the header in the cache
   cacheheader = hdr;
-  % update the header details (including time stampp, size and name)
+  % update the header details (including time stamp, size and name)
   cacheheader.details = dir(headerfile);
   % fprintf('added header to cache\n');
 end

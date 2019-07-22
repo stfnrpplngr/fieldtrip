@@ -58,11 +58,12 @@ function [type] = ft_filetype(filename, desired, varargin)
 %  - Tobii *.tsv
 %  - Stanford *.ply
 %  - Tucker Davis Technology
-%  - VSM-Medtech/CTF
+%  - CTF
 %  - Yokogawa & Ricoh
 %  - nifti, gifti
 %  - Nicolet *.e (currently from Natus, formerly Carefusion, Viasys and Taugagreining. Also known as Oxford/Teca/Medelec Valor Nervus)
 %  - Biopac *.acq
+%  - AnyWave *.ades
 
 % Copyright (C) 2003-2018 Robert Oostenveld
 %
@@ -678,6 +679,10 @@ elseif isfolder(filename) && most(filetype_check_extension({ls.name}, '.ntt'))
   manufacturer = 'Neuralynx';
   content = 'tetrode recordings ';
 
+elseif filetype_check_extension(filename, '.mat') && contains(filename, 'times_')
+  type = 'wave_clus';
+  manufacturer = 'Department of Engineering, University of Leicester, UK';
+  content = 'sorted spikes';
 elseif isfolder(p) && exist(fullfile(p, 'header'), 'file') && exist(fullfile(p, 'samples'), 'file') && exist(fullfile(p, 'events'), 'file')
   type = 'fcdc_buffer_offline';
   manufacturer = 'Donders Centre for Cognitive Neuroimaging';
@@ -904,6 +909,12 @@ elseif (filetype_check_extension(filename, '.vid') || filetype_check_extension(f
   manufacturer = 'VideoMEG';
   content = 'video';
 
+elseif (filetype_check_extension(filename, '.avi') || filetype_check_extension(filename, '.vlf') || filetype_check_extension(filename, '.wmv') || filetype_check_extension(filename, '.mov') || filetype_check_extension(filename, '.mp4'))
+  % generic fideo files, these are also supported by ft_read_header and ft_read_data
+  type = 'video';
+  manufacturer = 'generic';
+  content = 'video';
+
 elseif (filetype_check_extension(filename, '.dat') ||  filetype_check_extension(filename, '.Dat')) && (exist(fullfile(p, [f '.ini']), 'file') || exist(fullfile(p, [f '.Ini']), 'file'))
   % this should go before curry_dat
   type = 'deymed_dat';
@@ -919,6 +930,17 @@ elseif filetype_check_extension(filename, '.dat') && (filetype_check_header(file
   type = 'jaga16';
   manufacturer = 'Jinga-Hi';
   content = 'electrophysiological data';
+
+  % some AnyWave file formats, see http://meg.univ-amu.fr/wiki/AnyWave:ADES
+elseif filetype_check_extension(filename, '.ades') && filetype_check_header(filename, '#ADES') && exist(fullfile(p, [f '.dat']), 'file')
+  type = 'anywave_ades';
+  manufacturer = 'AnyWave';
+  content = 'continuous EEG, iEEG or MEG data';
+elseif filetype_check_extension(filename, '.dat') && exist(fullfile(p, [f '.ades']), 'file') && filetype_check_header(fullfile(p, [f '.ades']), '#ADES')
+  % this should go before curry_dat
+  type = 'anywave_dat';
+  manufacturer = 'AnyWave';
+  content = 'continuous EEG, iEEG or MEG data';
 
   % known Curry V4 file types
 elseif filetype_check_extension(filename, '.dap')
@@ -953,6 +975,18 @@ elseif filetype_check_extension(filename, '.dig')
   type = 'curry_dig';
   manufacturer = 'Curry';
   content = 'digitizer file';
+elseif filetype_check_extension(filename, '.cdt')
+  type = 'curry_cdt';
+  manufacturer = 'Curry';
+  content = 'Curry8 data file';
+elseif filetype_check_extension(filename, '.cef')
+  type = 'curry_cef';
+  manufacturer = 'Curry';
+  content = 'Curry event file';
+elseif filetype_check_extension(filename, '.dpa')
+  type = 'curry_dpa';
+  manufacturer = 'Curry';
+  content = 'Curry8 sensor file';
 
 elseif filetype_check_extension(filename, '.txt') && filetype_check_header(filename, '#Study')
   type = 'imotions_txt';
@@ -1077,17 +1111,24 @@ elseif filetype_check_extension(filename, '.sd') && filetype_check_header(filena
   manufacturer = 'Homer';
   content = 'source detector information';
 
-  % known Artinis file format
+  % known Artinis file formats
 elseif filetype_check_extension(filename, '.oxy3')
   type = 'artinis_oxy3';
   manufacturer = 'Artinis Medical Systems';
   content = '(f)NIRS data';
-  
+elseif filetype_check_extension(filename, '.oxy4')
+  type = 'artinis_oxy4';
+  manufacturer = 'Artinis Medical Systems';
+  content = '(f)NIRS data';
+elseif filetype_check_extension(filename, '.oxyproj')
+  type = 'artinis_oxyproj';
+  manufacturer = 'Artinis Medical Systems';
+  content = '(f)NIRS project file';
 elseif isequal([f x], 'optodetemplates.xml')
   type = 'artinis_xml';
   manufacturer = 'Artinis Medical Systems';
   content = '(f)NIRS optode layout';
-  
+
   % known TETGEN file types, see http://tetgen.berlios.de/fformats.html
 elseif any(filetype_check_extension(filename, {'.node' '.poly' '.smesh' '.ele' '.face' '.edge' '.vol' '.var' '.neigh'})) && exist(fullfile(p, [f '.node']), 'file') && filetype_check_ascii(fullfile(p, [f '.node']), 100) && exist(fullfile(p, [f '.poly']), 'file')
   type = 'tetgen_poly';
@@ -1355,6 +1396,15 @@ elseif filetype_check_extension(filename, '.acq')
   type = 'biopac_acq';
   manufacturer = 'Biopac';
   content = 'physiological signals';
+elseif contains(filename, '_events.tsv')
+  % this could be a BIDS-compatible events file
+  type = 'events_tsv';
+  manufacturer = 'BIDS';
+  content = 'events';
+elseif filetype_check_extension(filename, '.xdf') && filetype_check_header(filename, 'XDF')
+  type = 'sccn_xdf';
+  manufacturer = 'SCCN / Lab Streaming Layer';
+  content = 'multiple streams';
 end
 
 

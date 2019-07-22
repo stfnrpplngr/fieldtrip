@@ -178,7 +178,7 @@ sel = strcmp(cfg.parameter, 'anatomy');
 if ~any(sel)
   cfg.parameter = [{'anatomy'} cfg.parameter];
 else
-  [~, indx] = sort(sel);
+  [dum, indx] = sort(sel);
   cfg.parameter = cfg.parameter(fliplr(indx));
 end
 
@@ -245,7 +245,7 @@ if ~isfield(cfg, 'spmparams')
     %VF         = spm_vol([cfg.intermediatename '_anatomy' ext]);
     flags.nits = 0; % put number of non-linear iterations to zero
     params     = spm_normalise(VG, VF(1), [], [], [], flags);
-  elseif strcmp(cfg.spmversion, 'spm12') && strcmp(cfg.spmmethod, 'new')
+  elseif strcmp(cfg.spmversion, 'spm12') && (strcmp(cfg.spmmethod, 'new') || strcmp(cfg.spmmethod, 'mars'))
     if ~isfield(cfg, 'tpm') || isempty(cfg.tpm)
       cfg.tpm = fullfile(spm('dir'),'tpm','TPM.nii');
     end
@@ -272,8 +272,17 @@ if ~isfield(cfg, 'spmparams')
     
     % this writes the 'deformation field'
     fprintf('writing the deformation field to file\n');
-    [bb, ~] = spm_get_bbox(opts.tpm.V(1));
-    spm_preproc_write8(params, zeros(6,4), [0 0], [0 1], 1, 1, bb, cfg.downsample);
+    if strcmp(cfg.spmmethod, 'new')
+      bb        = spm_get_bbox(opts.tpm.V(1));
+      spm_preproc_write8(params, zeros(6,4), [0 0], [0 1], 1, 1, bb, cfg.downsample);
+    elseif strcmp(cfg.spmmethod, 'mars')
+      ft_hastoolbox('mars', 1);
+      if ~isfield(cfg, 'mars'), cfg.mars = []; end
+      beta        = ft_getopt(cfg.mars, 'beta', 0.1);
+      convergence = ft_getopt(cfg.mars, 'convergence', 0.1);
+      tcm{1}      = fullfile(fileparts(which('spm_mars_mrf')), 'rTCM_BW20_S1.mat');
+      params = spm_mars_mrf(params, zeros(6,4), [0 0], [0 1], tcm, beta, convergence, 1);
+    end
     
     oldparams = false;
     newparams = true;
@@ -292,7 +301,7 @@ else
     
     % this writes the 'deformation field'
     fprintf('writing the deformation field to file\n');
-    [bb, ~] = spm_get_bbox(params.tpm(1));
+    bb = spm_get_bbox(params.tpm(1));
     spm_preproc_write8(params, zeros(6,4), [0 0], [0 1], 1, 1, bb, cfg.downsample);
   end
 end
@@ -362,9 +371,9 @@ end
 if strcmp(cfg.keepintermediate, 'no')
   % remove the intermediate files
   for k = 1:length(Vout)
-    [p, f, ~] = fileparts(VF(k).fname);
+    [p, f] = fileparts(VF(k).fname);
     delete(fullfile(p, [f, '.*']));
-    [p, f, ~] = fileparts(Vout(k).fname);
+    [p, f] = fileparts(Vout(k).fname);
     delete(fullfile(p, [f, '.*']));
   end
 end
@@ -380,7 +389,7 @@ cfg.spmparams = params;
 cfg.final     = final;
 
 % restore the previous warning state
-warning(ws);
+ft_warning(ws);
 
 ft_postamble previous   mri
 ft_postamble provenance normalised
